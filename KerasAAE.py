@@ -78,7 +78,9 @@ def train(n_samples, batch_size, n_epochs):
 		discriminator_losses = []
 		generator_losses = []
 		for batch in np.arange(len(x_train) / batch_size):
-			samples = x_train[int(batch):int(batch + batch_size)]
+			start = int(batch * batch_size)
+			end = int(start + batch_size)
+			samples = x_train[start:end]
 			autoencoder_history = autoencoder.fit(x=samples, y=samples, epochs=1, batch_size=batch_size, validation_split=0.0, verbose=0)
 			fake_latent = encoder.predict(samples)
 			discriminator_input = np.concatenate((fake_latent, np.random.randn(batch_size, LATENT_DIM) * 5.))
