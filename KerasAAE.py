@@ -129,6 +129,8 @@ def generate(latent=None):
 	decoder = load_model('decoder.h5')
 	if latent is None:
 		latent = np.random.randn(1, LATENT_DIM)
+	else:
+		latent = np.array(latent)
 	sample = decoder.predict(latent.reshape(1, LATENT_DIM))
 	draw([{"title": "Sample", "image": sample}])
 
