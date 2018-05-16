@@ -40,11 +40,11 @@ def create_model(input_dim, latent_dim, verbose=False, save_graph=False):
 	autoencoder = Model(autoencoder_input, decoder(encoder(autoencoder_input)))
 	autoencoder.compile(optimizer=Adam(lr=1e-4), loss="mean_squared_error")
 	
-	discriminator.compile(optimizer=Adam(lr=1e-3), loss="binary_crossentropy")
+	discriminator.compile(optimizer=Adam(lr=1e-4), loss="binary_crossentropy")
 
 	discriminator.trainable = False
 	generator = Model(generator_input, discriminator(encoder(generator_input)))
-	generator.compile(optimizer=Adam(lr=1e-3), loss="binary_crossentropy")
+	generator.compile(optimizer=Adam(lr=1e-4), loss="binary_crossentropy")
 
 	if verbose:
 		print("Autoencoder Architecture")
