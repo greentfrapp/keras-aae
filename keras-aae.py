@@ -22,6 +22,7 @@ from absl import app
 FLAGS = flags.FLAGS
 
 # General
+flags.DEFINE_bool("adversarial", True, "Use Adversarial Autoencoder or regular Autoencoder")
 flags.DEFINE_bool("train", False, "Train")
 flags.DEFINE_bool("reconstruct", False, "Reconstruct image")
 flags.DEFINE_bool("generate", False, "Generate image from latent")
@@ -54,34 +55,40 @@ def create_model(input_dim, latent_dim, verbose=False, save_graph=False):
 	decoder.add(Dense(1000, activation='relu'))
 	decoder.add(Dense(input_dim, activation='sigmoid'))
 
-	discriminator = Sequential()
-	discriminator.add(Dense(1000, input_shape=(latent_dim,), activation='relu'))
-	discriminator.add(Dense(1000, activation='relu'))
-	discriminator.add(Dense(1, activation='sigmoid'))
+	if FLAGS.adversarial:
+		discriminator = Sequential()
+		discriminator.add(Dense(1000, input_shape=(latent_dim,), activation='relu'))
+		discriminator.add(Dense(1000, activation='relu'))
+		discriminator.add(Dense(1, activation='sigmoid'))
 
 	autoencoder = Model(autoencoder_input, decoder(encoder(autoencoder_input)))
 	autoencoder.compile(optimizer=Adam(lr=1e-4), loss="mean_squared_error")
 	
-	discriminator.compile(optimizer=Adam(lr=1e-4), loss="binary_crossentropy")
-
-	discriminator.trainable = False
-	generator = Model(generator_input, discriminator(encoder(generator_input)))
-	generator.compile(optimizer=Adam(lr=1e-4), loss="binary_crossentropy")
+	if FLAGS.adversarial:
+		discriminator.compile(optimizer=Adam(lr=1e-4), loss="binary_crossentropy")
+		discriminator.trainable = False
+		generator = Model(generator_input, discriminator(encoder(generator_input)))
+		generator.compile(optimizer=Adam(lr=1e-4), loss="binary_crossentropy")
 
 	if verbose:
 		print("Autoencoder Architecture")
 		print(autoencoder.summary())
-		print("Discriminator Architecture")
-		print(discriminator.summary())
-		print("Generator Architecture")
-		print(generator.summary())
+		if FLAGS.adversarial:
+			print("Discriminator Architecture")
+			print(discriminator.summary())
+			print("Generator Architecture")
+			print(generator.summary())
 
 	if save_graph:
 		plot_model(autoencoder, to_file="autoencoder_graph.png")
-		plot_model(discriminator, to_file="discriminator_graph.png")
-		plot_model(generator, to_file="generator_graph.png")
+		if FLAGS.adversarial:
+			plot_model(discriminator, to_file="discriminator_graph.png")
+			plot_model(generator, to_file="generator_graph.png")
 
-	return autoencoder, discriminator, generator, encoder, decoder
+	if FLAGS.adversarial:
+		return autoencoder, discriminator, generator, encoder, decoder
+	else:
+		return autoencoder, None, None, encoder, decoder
 
 def train(n_samples, batch_size, n_epochs):
 	autoencoder, discriminator, generator, encoder, decoder = create_model(input_dim=784, latent_dim=FLAGS.latent_dim)
@@ -104,8 +111,9 @@ def train(n_samples, batch_size, n_epochs):
 	past = datetime.now()
 	for epoch in np.arange(1, n_epochs + 1):
 		autoencoder_losses = []
-		discriminator_losses = []
-		generator_losses = []
+		if FLAGS.adversarial:
+			discriminator_losses = []
+			generator_losses = []
 		rand_x.shuffle(x)
 		rand_y.shuffle(y)
 		for batch in np.arange(len(x) / batch_size):
@@ -113,39 +121,44 @@ def train(n_samples, batch_size, n_epochs):
 			end = int(start + batch_size)
 			samples = x[start:end]
 			autoencoder_history = autoencoder.fit(x=samples, y=samples, epochs=1, batch_size=batch_size, validation_split=0.0, verbose=0)
-			fake_latent = encoder.predict(samples)
-			discriminator_input = np.concatenate((fake_latent, np.random.randn(batch_size, FLAGS.latent_dim) * 5.))
-			discriminator_labels = np.concatenate((np.zeros((batch_size, 1)), np.ones((batch_size, 1))))
-			discriminator_history = discriminator.fit(x=discriminator_input, y=discriminator_labels, epochs=1, batch_size=batch_size, validation_split=0.0, verbose=0)
-			generator_history = generator.fit(x=samples, y=np.ones((batch_size, 1)), epochs=1, batch_size=batch_size, validation_split=0.0, verbose=0)
+			if FLAGS.adversarial:
+				fake_latent = encoder.predict(samples)
+				discriminator_input = np.concatenate((fake_latent, np.random.randn(batch_size, FLAGS.latent_dim) * 5.))
+				discriminator_labels = np.concatenate((np.zeros((batch_size, 1)), np.ones((batch_size, 1))))
+				discriminator_history = discriminator.fit(x=discriminator_input, y=discriminator_labels, epochs=1, batch_size=batch_size, validation_split=0.0, verbose=0)
+				generator_history = generator.fit(x=samples, y=np.ones((batch_size, 1)), epochs=1, batch_size=batch_size, validation_split=0.0, verbose=0)
 			
 			autoencoder_losses.append(autoencoder_history.history["loss"])
-			discriminator_losses.append(discriminator_history.history["loss"])
-			generator_losses.append(generator_history.history["loss"])
+			if FLAGS.adversarial:
+				discriminator_losses.append(discriminator_history.history["loss"])
+				generator_losses.append(generator_history.history["loss"])
 		now = datetime.now()
 		print("\nEpoch {}/{} - {:.1f}s".format(epoch, n_epochs, (now - past).total_seconds()))
 		print("Autoencoder Loss: {}".format(np.mean(autoencoder_losses)))
-		print("Discriminator Loss: {}".format(np.mean(discriminator_losses)))
-		print("Generator Loss: {}".format(np.mean(generator_losses)))
+		if FLAGS.adversarial:
+			print("Discriminator Loss: {}".format(np.mean(discriminator_losses)))
+			print("Generator Loss: {}".format(np.mean(generator_losses)))
 		past = now
 
 		if epoch % 50 == 0:
 			print("\nSaving models...")
-			autoencoder.save('autoencoder.h5')
-			discriminator.save('discriminator.h5')
-			generator.save('generator.h5')
-			encoder.save('encoder.h5')
-			decoder.save('decoder.h5')
+			# autoencoder.save('{}_autoencoder.h5'.format(desc))
+			encoder.save('{}_encoder.h5'.format(desc))
+			decoder.save('{}_decoder.h5'.format(desc))
+			# if FLAGS.adversarial:
+			# 	discriminator.save('{}_discriminator.h5'.format(desc))
+			# 	generator.save('{}_generator.h5'.format(desc))
 
-	autoencoder.save('autoencoder.h5')
-	discriminator.save('discriminator.h5')
-	generator.save('generator.h5')
-	encoder.save('encoder.h5')
-	decoder.save('decoder.h5')
+	# autoencoder.save('{}_autoencoder.h5'.format(desc))
+	encoder.save('{}_encoder.h5'.format(desc))
+	decoder.save('{}_decoder.h5'.format(desc))
+	# if FLAGS.adversarial:
+		# discriminator.save('{}_discriminator.h5'.format(desc))
+		# generator.save('{}_generator.h5'.format(desc))
 
 def reconstruct(n_samples):
-	encoder = load_model('encoder.h5')
-	decoder = load_model('decoder.h5')
+	encoder = load_model('{}_encoder.h5'.format(desc))
+	decoder = load_model('{}_decoder.h5'.format(desc))
 	(x_train, y_train), (x_test, y_test) = mnist.load_data()
 	choice = np.random.choice(np.arange(n_samples))
 	original = x_test[choice].reshape(1, 784)
@@ -156,7 +169,7 @@ def reconstruct(n_samples):
 	draw([{"title": "Original", "image": original}, {"title": "Reconstruction", "image": reconstruction}])
 
 def generate(latent=None):
-	decoder = load_model('decoder.h5')
+	decoder = load_model('{}_decoder.h5'.format(desc))
 	if latent is None:
 		latent = np.random.randn(1, FLAGS.latent_dim)
 	else:
@@ -179,7 +192,7 @@ def draw(samples):
 	raw_input("Press Enter to Exit")
 
 def generate_grid(latent=None):
-	decoder = load_model('decoder.h5')
+	decoder = load_model('{}_decoder.h5'.format(desc))
 	samples = []
 	for i in np.arange(400):
 		latent = np.array([(i % 20) * 1.5 - 15., 15. - (i / 20) * 1.5])
@@ -201,7 +214,7 @@ def draw_grid(samples):
 		fig.add_subplot(ax)
 	plt.show(block=False)
 	raw_input("Press Enter to Exit")
-	# fig.savefig("images/grid.png", bbox_inches="tight", dpi=300)
+	# fig.savefig("images/{}_grid.png".format(desc), bbox_inches="tight", dpi=300)
 
 def plot(n_samples):
 	encoder = load_model('encoder.h5')
@@ -223,9 +236,14 @@ def plot(n_samples):
 	ax.set_title("Latent Space")
 	plt.show(block=False)
 	raw_input("Press Enter to Exit")
-	# fig.savefig("images/latent.png", bbox_inches="tight", dpi=300)
+	# fig.savefig("images/{}_latent.png".format(desc), bbox_inches="tight", dpi=300)
 
 def main(argv):
+	global desc
+	if FLAGS.adversarial:
+		desc = "aae"
+	else:
+		desc = "regular"
 	if FLAGS.train:
 		train(n_samples=FLAGS.train_samples, batch_size=FLAGS.batchsize, n_epochs=FLAGS.epochs)
 	elif FLAGS.reconstruct:
