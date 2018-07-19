@@ -217,7 +217,7 @@ def draw_grid(samples):
 	# fig.savefig("images/{}_grid.png".format(desc), bbox_inches="tight", dpi=300)
 
 def plot(n_samples):
-	encoder = load_model('encoder.h5')
+	encoder = load_model('{}_encoder.h5'.format(desc))
 	(x_train, y_train), (x_test, y_test) = mnist.load_data()
 	x = x_test[:n_samples].reshape(n_samples, 784)
 	y = y_test[:n_samples]
